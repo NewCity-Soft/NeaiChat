@@ -1,0 +1,208 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --color-brand: #0a59f7;
+  --color-brand-dark: #317af7;
+  
+  --color-bg-primary: #f2f2f6;
+  --color-bg-primary-dark: #000000;
+  
+  --color-bg-secondary: rgba(255, 255, 255, 0.7);
+  --color-bg-secondary-dark: rgba(30, 30, 30, 0.7);
+  
+  @keyframes spin-slow {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  --animate-spin-slow: spin-slow 3s linear infinite;
+}
+
+@layer base {
+  html, body {
+    @apply overflow-hidden w-full h-full;
+  }
+  body {
+    @apply bg-bg-primary dark:bg-bg-primary-dark text-gray-900 dark:text-gray-100 antialiased selection:bg-brand/30 selection:text-brand;
+  }
+}
+
+@utility no-scrollbar {
+  &::-webkit-scrollbar {
+    display: none;
+  }
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Custom Scrollbar for HarmonyOS clean look */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 dark:bg-gray-600 rounded-full;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-400 dark:bg-gray-500;
+}
+
+/* Print Optimization Styles */
+@media print {
+  @page {
+    margin: 2cm;
+    size: auto;
+  }
+
+  .no-print,
+  nav,
+  aside,
+  header,
+  footer,
+  button,
+  .chat-input-area,
+  .sidebar-container,
+  .header-nav,
+  .fixed,
+  .sticky:not(.print-sticky),
+  .modal-overlay,
+  [role="dialog"] {
+    display: none !important;
+  }
+
+  html, body {
+    overflow: visible !important;
+    height: auto !important;
+    background: white !important;
+    color: black !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Main Chat Layout Reset */
+  .flex-1.overflow-hidden.relative,
+  .flex-1.overflow-y-auto,
+  #root,
+  .h-screen {
+    overflow: visible !important;
+    height: auto !important;
+    display: block !important;
+    position: static !important;
+  }
+
+  .max-w-5xl {
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Message Bubble Styling for Print */
+  .rounded-\[24px\] {
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: none !important;
+    background: #f8fafc !important;
+    color: #1a202c !important;
+    border-radius: 12px !important;
+    margin-bottom: 1.5rem !important;
+    page-break-inside: avoid;
+  }
+
+  .bg-brand, .bg-brand-dark {
+    background: #f1f5f9 !important;
+    color: #0f172a !important;
+    border-color: #cbd5e1 !important;
+  }
+
+  .text-white {
+    color: #0f172a !important;
+  }
+
+  /* Ensure markdown content is legible */
+  .prose {
+    max-width: none !important;
+    color: black !important;
+  }
+
+  .prose pre {
+    background: #f1f5f9 !important;
+    border: 1px solid #e2e8f0 !important;
+    color: #1e293b !important;
+  }
+
+  /* Print-only Header */
+  .print-only {
+    display: block !important;
+  }
+}
+
+.print-only {
+  display: none;
+}
+
+/* Prism Token Styling for Editor */
+.editor-content pre,
+.editor-content code {
+  font-family: inherit !important;
+}
+
+.editor-content .token.comment,
+.editor-content .token.prolog,
+.editor-content .token.doctype,
+.editor-content .token.cdata {
+  color: #6a9955;
+}
+
+.editor-content .token.punctuation {
+  color: #d4d4d4;
+}
+
+.editor-content .token.property,
+.editor-content .token.tag,
+.editor-content .token.boolean,
+.editor-content .token.number,
+.editor-content .token.constant,
+.editor-content .token.symbol,
+.editor-content .token.deleted {
+  color: #b5cea8;
+}
+
+.editor-content .token.selector,
+.editor-content .token.attr-name,
+.editor-content .token.string,
+.editor-content .token.char,
+.editor-content .token.builtin,
+.editor-content .token.inserted {
+  color: #ce9178;
+}
+
+.editor-content .token.operator,
+.editor-content .token.entity,
+.editor-content .token.url,
+.editor-content .language-css .token.string,
+.style .token.string {
+  color: #d4d4d4;
+}
+
+.editor-content .token.atrule,
+.editor-content .token.attr-value,
+.editor-content .token.keyword {
+  color: #569cd6;
+}
+
+.editor-content .token.function,
+.editor-content .token.class-name {
+  color: #dcdcaa;
+}
+
+.editor-content .token.regex,
+.editor-content .token.important,
+.editor-content .token.variable {
+  color: #d16969;
+}

@@ -1,0 +1,12 @@
+{
+  "name": "Remix: NeaiChat",
+  "description": "",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NeaiChat</title>
+  <script>(function(){var B={};function r(u){if(!u)return null;var p=u.replace(/.*\/,'').split('?')[0];if(B[p])return B[p];for(var k of Object.keys(B)){if(u.endsWith('/'+k)||u.endsWith(k))return B[k];}if(!B[p]&&p===''){var d=u.replace(/\/$/,'');for(var k of Object.keys(B)){if(d.endsWith('/'+k)||d===k)return B[k];}}return null;}var f=window.fetch;window.fetch=function(i,t){var u=typeof i==='string'?i:(i&&i.url)||'';var b=r(u);if(b){var m=b.indexOf(';base64,'),mime=b.slice(5,m);return Promise.resolve(new Response(atob(b.slice(m+8)),{headers:{'Content-Type':mime}}));}return f.call(this,i,t);};var s=HTMLImageElement.prototype.setAttribute;HTMLImageElement.prototype.setAttribute=function(k,v){if(k==='src'){var b=r(v);if(b){this.src=b;return;}}return s.call(this,k,v);};})();</script>
+</head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

@@ -1,0 +1,22 @@
+appId: com.newcitysoft.neaichat
+productName: NeaiChat
+directories:
+  buildResources: electron
+  output: release
+files:
+  - dist/**/*
+  - electron/main.js
+  - '!**/node_modules/**/*'
+  - '!electron-builder.yml'
+  - '!dist/pyodide/**/*'
+  - '!dist/sqljs/**/*'
+  - '!dist/logo.png'
+win:
+  target:
+    - target: msi
+      arch: [x64]
+  icon: public/logo.png
+msi:
+  shortcutName: NeaiChat
+  menuCategory: NeaiChat
+publish: null

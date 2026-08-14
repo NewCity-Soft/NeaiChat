@@ -1,0 +1,345 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.check.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: check
+        run: |
+          CHANGES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
+          CODE_CHANGES=$(echo "$CHANGES" | grep -E '^(src/|electron/|package\.json|vite\.config|capacitor|tsconfig|\.github/workflows/release)' || echo "")
+          if [ -z "$CODE_CHANGES" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+  ai:
+    needs: check
+    if: needs.check.outputs.skip == 'false'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.ver }}
+      changelog: ${{ steps.gen.outputs.changelog }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ── 提交记录 ──────────────────────────────────────────────
+      - name: 获取提交记录
+        id: commits
+        run: |
+          LAST_TAG=$(git tag --sort=-version:refname | grep -E '^v' | head -1 || echo "")
+          if [ -z "$LAST_TAG" ]; then
+            COMMITS=$(git log --oneline -20)
+          else
+            COMMITS=$(git log --oneline ${LAST_TAG}..HEAD)
+          fi
+          echo "$COMMITS" > /tmp/commits.txt
+          echo "raw<<EOF" >> $GITHUB_OUTPUT
+          echo "$COMMITS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      # ── 调用 Agnes-AI ──────────────────────────────────────
+      - name: 调用 Agnes-AI 生成版本号和 Changelog
+        id: gen
+        env:
+          AGNES_KEY: ${{ secrets.ANNIE_API_KEY }}
+          COMMITS_RAW: ${{ steps.commits.outputs.raw }}
+        run: |
+          set -e
+
+          # 用 tee 写 prompt 文件，避免 heredoc 内嵌导致 YAML 缩进错误
+          COMMITS="$COMMITS_RAW" tee /tmp/prompt.txt > /dev/null << 'PROMPTEOF'
+          你是 NeaiChat 项目的 AI 助手，请完成以下两件事：
+
+          ## 任务一：智能语义化版本号
+          根据提交记录的变更性质，按语义化版本规则决定新版本号：
+          - 包含 breaking change / BREAKING / 重大架构变更 → 主版本号 +1（如 v1.0.0）
+          - 包含新功能 feat → 次版本号 +1，补丁归零（如 v0.2.0）
+          - 仅修复 bug fix / 重构 refactor / 文档 docs / 性能优化 perf → 补丁号 +1（如 v0.1.1）
+          输出：仅一行版本号，如 v0.1.2
+
+          ## 任务二：生成 Changelog
+          格式要求：
+          ### Changelog
+          - feat: 新功能描述
+          - fix: bug 修复描述
+
+          每条以 '- ' 开头，中文描述，简洁清晰。
+
+          ## 提交记录
+          PROMPTEOF
+
+          cat /tmp/commits.txt >> /tmp/prompt.txt
+
+          RESP=$(curl -s -X POST "https://api.anniemirror.com/v1/chat/completions" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $AGNES_KEY" \
+            -d "{
+              \"model\": \"Agnes-AI/agnes-2.5-flash\",
+              \"messages\": [{\"role\": \"user\", \"content\": \"$(sed 's/"/\\"/g' /tmp/prompt.txt)\"}],
+              \"max_tokens\": 1024,
+              \"temperature\": 0.3
+            }" 2>/dev/null || echo '{"choices":[{"message":{"content":""}}]}')
+
+          # 提取响应内容
+          RAW_RESP=$(echo "$RESP" | python3 -c "
+          import sys, json
+          try:
+              d = json.load(sys.stdin)
+              print(d['choices'][0]['message']['content'])
+          except:
+              print('')
+          " 2>/dev/null || echo "")
+
+          # 提取版本号
+          NEW_VER=$(echo "$RAW_RESP" | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "")
+          if [ -n "$NEW_VER" ]; then
+            echo "ver=$NEW_VER" >> $GITHUB_OUTPUT
+            echo "AI 决定版本: $NEW_VER"
+          else
+            echo "ver=v0.0.1" >> $GITHUB_OUTPUT
+            echo "使用默认版本 v0.0.1"
+          fi
+
+          # 提取 changelog
+          CHANGELOG=$(echo "$RAW_RESP" | python3 -c "
+          import sys
+          text = sys.stdin.read()
+          start = text.find('### Changelog')
+          if start == -1:
+              start = text.find('Changelog')
+          if start != -1:
+              chunk = text[start+11:]
+              end = chunk.find('\n### ')
+              if end == -1:
+                  end = chunk.find('\n---')
+              if end == -1:
+                  end = len(chunk)
+              lines = [l for l in chunk[:end].strip().split('\n') if l.strip().startswith('-')]
+              if lines:
+                  print('### Changelog')
+                  print('\n'.join(lines))
+              else:
+                  print('### Changelog\n- 自动构建')
+          else:
+              print('### Changelog\n- 自动构建')
+          " 2>/dev/null || echo "### Changelog
+          - 自动构建")
+
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "Changelog: $CHANGELOG"
+
+  build-html:
+    needs: check
+    if: needs.check.outputs.skip == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 构建 HTML
+        run: npm run build
+        env:
+          NODE_ENV: production
+
+      - name: 清理冗余目录
+        run: |
+          rm -rf dist/pyodide dist/sqljs dist/logo.png
+
+      - name: 上传 HTML 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: html
+          path: dist/index.html
+
+  build-msi:
+    needs: [check, build-html]
+    if: needs.check.outputs.skip == 'false'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 下载 HTML
+        uses: actions/download-artifact@v4
+        with:
+          name: html
+          path: dist
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 构建 Electron MSI
+        run: npx electron-builder --win msi --x64
+
+      - name: 上传 MSI 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: msi
+          path: release/**/*.msi
+
+  build-apk:
+    needs: [check, build-html]
+    if: needs.check.outputs.skip == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 下载 HTML
+        uses: actions/download-artifact@v4
+        with:
+          name: html
+          path: dist
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 安装 Capacitor
+        run: npm install @capacitor/core @capacitor/cli @capacitor/android
+
+      - name: 初始化 Capacitor
+        run: |
+          rm -f capacitor.config.ts
+          cat > capacitor.config.js << 'EOF'
+          const config = {
+            appId: 'com.newcitysoft.neaichat',
+            appName: 'NeaiChat',
+            webDir: 'dist',
+            server: { androidScheme: 'https' }
+          };
+          export default config;
+          EOF
+          npx cap init NeaiChat com.newcitysoft.neaichat --web-dir=dist --no-open
+          npx cap add android
+          npx cap sync
+
+      - name: 构建 APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+          cd ..
+
+      - name: 上传 APK 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+
+  release:
+    needs: [check, ai, build-html, build-msi, build-apk]
+    if: needs.check.outputs.skip == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ── 下载构建产物 ──────────────────────────────────────
+      - name: 下载 HTML
+        uses: actions/download-artifact@v4
+        with:
+          name: html
+          path: dist
+
+      - name: 下载 MSI
+        uses: actions/download-artifact@v4
+        with:
+          name: msi
+          path: release
+
+      - name: 下载 APK
+        uses: actions/download-artifact@v4
+        with:
+          name: apk
+          path: android/app/build/outputs/apk/debug
+
+      # ── 生成 CHANGELOG.md ─────────────────────────────────
+      - name: 生成 Changelog 文件
+        run: |
+          VERSION="${{ needs.ai.outputs.version }}"
+          {
+            echo "# Changelog"
+            echo ""
+            echo "## $VERSION - $(date +%Y-%m-%d)"
+            echo ""
+            echo "${{ needs.ai.outputs.changelog }}"
+            echo ""
+            echo "---"
+            echo ""
+            if [ -f CHANGELOG.md ]; then
+              cat CHANGELOG.md
+            fi
+          } > CHANGELOG.new.md
+          mv CHANGELOG.new.md CHANGELOG.md
+          echo "CHANGELOG 已生成"
+
+      # ── 发布 GitHub Release ───────────────────────────────
+      - name: 发布 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.ai.outputs.version }}
+          name: "Release ${{ needs.ai.outputs.version }}"
+          body: |
+            ## ${{ needs.ai.outputs.version }}
+
+            ${{ needs.ai.outputs.changelog }}
+
+            ---
+            ### 构建产物
+            - **HTML**: `dist/index.html`（单文件，浏览器直接打开）
+            - **APK**: Android 安装包
+            - **MSI**: Windows 桌面安装包
+          files: |
+            dist/index.html
+            release/**/*.msi
+            android/app/build/outputs/apk/debug/app-debug.apk
+          draft: false
+          prerelease: false
+
+      # ── 提交 CHANGELOG 回仓库 ─────────────────────────────
+      - name: 提交更新
+        run: |
+          git config user.name "NeaiChat CI"
+          git config user.email "ci@neaichat.local"
+          git add CHANGELOG.md
+          git diff --cached --quiet || git commit -m "chore: add changelog for ${{ needs.ai.outputs.version }}"
+          git push
